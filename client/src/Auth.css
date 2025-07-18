@@ -1,0 +1,404 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Reset y configuración base */
+* {
+  box-sizing: border-box;
+}
+
+/* Variables CSS para temas */
+:root {
+  --auth-bg-light: #f8fafc;
+  --auth-bg-dark: #0f172a;
+  --auth-card-light: rgba(255, 255, 255, 0.9);
+  --auth-card-dark: rgba(30, 41, 59, 0.9);
+  --auth-text-light: #334155;
+  --auth-text-dark: #f1f5f9;
+  --auth-border-light: #e2e8f0;
+  --auth-border-dark: #475569;
+}
+
+/* Animaciones */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse-slow {
+  0%, 100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+@keyframes fade-in-slide {
+  0% {
+    opacity: 0;
+    transform: translateX(30px) scale(0.95);
+    filter: blur(8px);
+  }
+  50% {
+    opacity: 0.6;
+    transform: translateX(15px) scale(0.98);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes spin-slow {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes drift {
+  0%, 100% {
+    transform: translateX(0) translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateX(10px) translateY(-15px) rotate(90deg);
+  }
+  50% {
+    transform: translateX(-5px) translateY(-25px) rotate(180deg);
+  }
+  75% {
+    transform: translateX(-15px) translateY(-10px) rotate(270deg);
+  }
+}
+
+@keyframes wave {
+  0%, 100% {
+    transform: translateY(0) scaleX(1);
+  }
+  50% {
+    transform: translateY(-5px) scaleX(1.05);
+  }
+}
+
+@keyframes glow-pulse {
+  0%, 100% {
+    opacity: 0.3;
+    filter: blur(20px);
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.6;
+    filter: blur(25px);
+    transform: scale(1.1);
+  }
+}
+
+/* Aplicar animaciones */
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.8s ease-out;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse-slow 4s ease-in-out infinite;
+}
+
+.animate-fade-in-slide {
+  animation: fade-in-slide 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.animate-spin-slow {
+  animation: spin-slow 20s linear infinite;
+}
+
+.animate-drift {
+  animation: drift 15s ease-in-out infinite;
+}
+
+.animate-wave {
+  animation: wave 8s ease-in-out infinite;
+}
+
+.animate-glow-pulse {
+  animation: glow-pulse 6s ease-in-out infinite;
+}
+
+/* Estilos base para el contenedor de autenticación */
+.auth-page {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Efectos de glassmorphism mejorados */
+.auth-page .glass-effect {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+}
+
+.dark .auth-page .glass-effect {
+  background: rgba(15, 23, 42, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+/* Inputs personalizados */
+.auth-page input:focus {
+  outline: none;
+  ring: 2px;
+  ring-color: #8b5cf6;
+  ring-offset: 2px;
+}
+
+.dark .auth-page input:focus {
+  ring-color: #a855f7;
+}
+
+/* Botones con efectos mejorados */
+.auth-page button {
+  transition: all 0.2s ease-in-out;
+}
+
+.auth-page button:hover {
+  transform: translateY(-1px);
+}
+
+.auth-page button:active {
+  transform: translateY(0);
+}
+
+/* Select dropdown personalizado */
+.auth-page [data-radix-select-content] {
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 10px 38px -10px rgba(22, 23, 24, 0.35), 0 10px 20px -15px rgba(22, 23, 24, 0.2);
+  animation: fadeInUp 0.2s ease-out;
+}
+
+.dark .auth-page [data-radix-select-content] {
+  border-color: #475569;
+  background: #334155;
+  box-shadow: 0 10px 38px -10px rgba(0, 0, 0, 0.5), 0 10px 20px -15px rgba(0, 0, 0, 0.4);
+}
+
+.auth-page [data-radix-select-item] {
+  border-radius: 8px;
+  margin: 2px 4px;
+  transition: all 0.2s ease;
+}
+
+.auth-page [data-radix-select-item]:hover,
+.auth-page [data-radix-select-item][data-highlighted] {
+  background: #f1f5f9;
+  transform: translateX(2px);
+}
+
+.dark .auth-page [data-radix-select-item]:hover,
+.dark .auth-page [data-radix-select-item][data-highlighted] {
+  background: #475569;
+}
+
+/* Dialog personalizado */
+.auth-page [data-radix-dialog-content] {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+/* Estilos responsivos mejorados */
+@media (max-width: 1024px) {
+  .auth-page .lg\:grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 2rem;
+  }
+
+  .auth-page .lg\:text-left {
+    text-align: center;
+  }
+}
+
+@media (max-width: 640px) {
+  .auth-page .rounded-3xl {
+    border-radius: 24px;
+  }
+
+  .auth-page .p-8 {
+    padding: 1.5rem;
+  }
+
+  .auth-page .space-y-6 > * + * {
+    margin-top: 1rem;
+  }
+
+  .auth-page .grid-cols-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .auth-page .gap-4 {
+    gap: 0.75rem;
+  }
+}
+
+/* Mejoras de accesibilidad */
+.auth-page *:focus-visible {
+  outline: 2px solid #8b5cf6;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.dark .auth-page *:focus-visible {
+  outline-color: #a855f7;
+}
+
+/* Efectos de hover mejorados */
+.auth-page .hover\:scale-\[1\.02\]:hover {
+  transform: scale(1.02);
+}
+
+.auth-page .hover\:shadow-xl:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.dark .auth-page .hover\:shadow-xl:hover {
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3), 0 10px 10px -5px rgba(0, 0, 0, 0.2);
+}
+
+/* Transiciones suaves para el cambio de tema */
+.auth-page * {
+  transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}
+
+/* Gradientes personalizados */
+.auth-page .bg-gradient-to-r {
+  background-image: linear-gradient(to right, var(--tw-gradient-stops));
+}
+
+.auth-page .from-purple-600 {
+  --tw-gradient-from: #9333ea;
+  --tw-gradient-stops: var(--tw-gradient-from), var(--tw-gradient-to, rgba(147, 51, 234, 0));
+}
+
+.auth-page .to-blue-600 {
+  --tw-gradient-to: #2563eb;
+}
+
+/* Estados de loading mejorados */
+.auth-page .animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Iconos con transiciones suaves */
+.auth-page svg {
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+
+.auth-page button:hover svg {
+  transform: scale(1.1);
+}
+
+/* Mejoras para pantallas de alta densidad */
+@media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
+  .auth-page {
+    -webkit-font-smoothing: subpixel-antialiased;
+  }
+}
+
+/* Estados de error y éxito */
+.auth-page .border-red-500 {
+  border-color: #ef4444;
+}
+
+.auth-page .border-green-500 {
+  border-color: #22c55e;
+}
+
+.auth-page .text-red-500 {
+  color: #ef4444;
+}
+
+.auth-page .text-green-500 {
+  color: #22c55e;
+}
+
+/* Efectos de partículas de fondo */
+.auth-page .particle {
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+  opacity: 0.1;
+  animation: float 8s ease-in-out infinite;
+}
+
+.auth-page .particle:nth-child(2n) {
+  animation-delay: -2s;
+  animation-duration: 10s;
+}
+
+.auth-page .particle:nth-child(3n) {
+  animation-delay: -4s;
+  animation-duration: 12s;
+}
+
+/* Overlay mejorado para modo oscuro */
+.dark .auth-page::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(147, 51, 234, 0.1) 0%, transparent 50%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Contenedor principal con z-index adecuado */
+.auth-page > .relative {
+  position: relative;
+  z-index: 10;
+}
