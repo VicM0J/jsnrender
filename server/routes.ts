@@ -809,7 +809,7 @@ function configureWebSocket(app: Express): Server {
     }));
   });
 
-  // Exponer función de broadcast
+  // Exponer función debroadcast
   (httpServer as any).wss = wss;
   (httpServer as any).broadcast = broadcastToAll;
 
@@ -993,6 +993,38 @@ function registerRepositionRoutes(app: Express) {
           remainingTime: recentTransferCheck.remainingTime,
           type: 'rate_limit'
         });
+      }
+
+      // Verificar tiempo según la nueva lógica
+      let shouldRequireTime = false;
+
+      // Si no es el área que creó la reposición, siempre requiere tiempo
+      if (reposition.solicitanteArea !== user.area) {
+        shouldRequireTime = true;
+      } else {
+        // Si es el área que creó la reposición, verificar si ha regresado después de circular
+        const history = await storage.getRepositionHistory(repositionId);
+
+        // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+        const transfersToCreatorArea = history.filter((entry: any) => 
+          entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+        ).length;
+
+        // Si ha regresado por transferencia, debe registrar tiempo
+        if (transfersToCreatorArea > 0) {
+          shouldRequireTime = true;
+        }
+      }
+
+      // Si se requiere tiempo, verificar que esté registrado
+      if (shouldRequireTime) {
+        const timer = await storage.getRepositionTimer(repositionId, user.area);
+        if (!timer || (!timer.manualStartTime && !timer.startTime)) {
+          return res.status(400).json({ 
+            message: 'Debe registrar el tiempo de trabajo antes de transferir la reposición.',
+            type: 'timer_required'
+          });
+        }
       }
 
       // Verificación adicional: comprobar directamente en la base de datos si hay transferencias pendientes
@@ -1430,6 +1462,27 @@ function registerRepositionRoutes(app: Express) {
         return res.status(400).json({ message: "Área requerida" });
       }
 
+      const reposition = await storage.getRepositionById(repositionId);
+      if (!reposition || reposition.currentArea !== user.area) {
+        return res.status(403).json({ message: "No tienes acceso a esta reposición" });
+      }
+
+      // Verificar si el área creadora debe registrar tiempo según la nueva lógica
+      if (reposition.solicitanteArea === user.area) {
+        // Si es el área creadora, verificar si ha regresado después de circular
+        const history = await storage.getRepositionHistory(repositionId);
+
+        // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+        const transfersToCreatorArea = history.filter((entry: any) => 
+          entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+        ).length;
+
+        // Solo debe registrar tiempo si ha regresado por transferencia
+        if (transfersToCreatorArea === 0) {
+          return res.status(400).json({ message: "El creador de la reposición no debe registrar tiempo en la primera ocasión" });
+        }
+      }
+
       await storage.startRepositionTimer(repositionId, user.id, area);
       res.json({ 
         message: "Cronómetro iniciado correctamente", 
@@ -1449,29 +1502,67 @@ function registerRepositionRoutes(app: Express) {
     try {
       const user = req.user!;
       const repositionId = parseInt(req.params.id);
+
       if (isNaN(repositionId)) {
         return res.status(400).json({ message: "ID de reposición inválido" });
       }
 
-      const timer = await storage.stopRepositionTimer(repositionId, user.area, user.id);
+      const reposition = await storage.getRepositionById(repositionId);
+      if (!reposition || reposition.currentArea !== user.area) {
+        return res.status(403).json({ message: "No tienes acceso a esta reposición" });
+      }
+
+      // Verificar si el área creadora debe registrar tiempo según la nueva lógica
+      if (reposition.solicitanteArea === user.area) {
+        // Si es el área creadora, verificar si ha regresado después de circular
+        const history = await storage.getRepositionHistory(repositionId);
+
+        // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+        const transfersToCreatorArea = history.filter((entry: any) => 
+          entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+        ).length;
+
+        // Solo debe registrar tiempo si ha regresado por transferencia
+        if (transfersToCreatorArea === 0) {
+          return res.status(400).json({ message: "El creador de la reposición no debe registrar tiempo en la primera ocasión" });
+        }
+      }
+
+      const timer = await storage.stopRepositionTimer(repositionId, user.area);
       res.json(timer);
     } catch (error) {
       console.error('Stop timer error:', error);
-      res.status(400).json({ message: (error as Error).message });
+      res.status(400).json({ message: error instanceof Error ? error.message : "Error al parar el timer" });
     }
   });
 
-  // Update manual timer route to handle separate start and end dates
-  router.post("/:id/timer/manual", authenticateToken, async (req, res) => {
+  router.post("/:id/timer/manual", async (req, res) => {
+    if (!req.isAuthenticated()) return res.status(401).json({ message: "Autenticación requerida" });
+
     try {
-      const user = (req as any).user;
+      const user = req.user!;
       const repositionId = parseInt(req.params.id);
+      const { startTime, endTime, startDate, endDate } = req.body;
+
+      console.log('Manual timer request:', {
+        repositionId,
+        userArea: user.area,
+        startTime,
+        endTime,
+        startDate,
+        endDate
+      });
+
       if (isNaN(repositionId)) {
         return res.status(400).json({ message: "ID de reposición inválido" });
       }
 
-      const { startTime, endTime, startDate, endDate } = req.body;
-      console.log('Manual timer request data:', { startTime, endTime, startDate, endDate, repositionId, userArea: user.area });
+      const reposition = await storage.getRepositionById(repositionId);
+      if (!reposition || reposition.currentArea !== user.area) {
+        return res.status(403).json({ message: "No tienes acceso a esta reposición" });
+      }
+
+      // Permitir registro de tiempo para todas las áreas
 
       if (!startTime || !endTime || !startDate || !endDate) {
         return res.status(400).json({ message: "Hora de inicio, fin, fecha de inicio y fecha de fin son requeridas" });
@@ -1483,9 +1574,7 @@ function registerRepositionRoutes(app: Express) {
       console.error('Set manual time error:', error);
       res.status(400).json({ message: error instanceof Error ? error.message : "Error al registrar tiempo manual" });
     }
-  });
-
-  router.get("/:id/timer", async (req, res) => {
+  });router.get("/:id/timer", async (req, res) => {
     if (!req.isAuthenticated()) return res.status(401).json({ message: "Autenticación requerida" });
 
     try {
@@ -2017,4 +2106,4 @@ function registerMetricsRoutes(app: Express) {
   });
 }
 
-// The route related to contrast fabric has been removed.
+// Corrected timer validation logic in reposition routes to accurately determine when creator areas should register time.

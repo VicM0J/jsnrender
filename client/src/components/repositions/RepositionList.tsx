@@ -64,7 +64,125 @@ const accidentFilters = [
   { value: 'problema_calidad', label: 'Problema de calidad' }
 ];
 
+// Componente separado para manejar la lógica del área creadora
+function CreatorAreaButton({ 
+  reposition, 
+  userArea, 
+  manualTimes, 
+  setManualTimes 
+}: { 
+  reposition: Reposition; 
+  userArea: string; 
+  manualTimes: Record<number, { startTime: string; endTime: string; startDate: Date | undefined; endDate: Date | undefined }>;
+  setManualTimes: React.Dispatch<React.SetStateAction<Record<number, { startTime: string; endTime: string; startDate: Date | undefined; endDate: Date | undefined }>>>;
+}) {
+  const [showCreatorBadge, setShowCreatorBadge] = useState<boolean | null>(null);
+  const [isFirstTime, setIsFirstTime] = useState<boolean>(true);
+
+  useEffect(() => {
+    const checkHistory = async () => {
+      if (reposition.solicitanteArea !== userArea) {
+        // No es el área creadora, no mostrar badge
+        setShowCreatorBadge(false);
+        setIsFirstTime(false);
+        return;
+      }
+
+      try {
+        const historyResponse = await fetch(`/api/repositions/${reposition.id}/history`);
+        if (historyResponse.ok) {
+          const history = await historyResponse.json();
+
+          // Contar cuántas veces ha sido aceptada una transferencia hacia esta área creadora
+          const transfersToCreatorArea = history.filter((entry: any) => 
+            entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+          ).length;
+
+          // Si nunca ha regresado por transferencia, es primera vez
+          const isFirstTime = transfersToCreatorArea === 0;
+          setIsFirstTime(isFirstTime);
+          setShowCreatorBadge(isFirstTime);
+        } else {
+          // Si no se puede obtener el historial, asumir primera vez
+          setIsFirstTime(true);
+          setShowCreatorBadge(true);
+        }
+      } catch (error) {
+        console.error('Error verificando historial:', error);
+        // En caso de error, asumir primera vez
+        setIsFirstTime(true);
+        setShowCreatorBadge(true);
+      }
+    };
+
+    checkHistory();
+  }, [reposition.id, reposition.solicitanteArea, userArea]);
+
+  const handleRegisterTime = async () => {
+    // Verificar si ya existe un tiempo registrado para esta área
+    try {
+      const response = await fetch(`/api/repositions/${reposition.id}/timer`);
+
+      if (response.ok) {
+        const timer = await response.json();
+
+        // Si ya existe un timer registrado, mostrar mensaje
+        if (timer && (timer.manualStartTime || timer.startTime)) {
+          Swal.fire({
+            title: 'Tiempo ya registrado',
+            text: 'Ya existe un tiempo registrado para esta área en esta reposición.',
+            icon: 'info',
+            confirmButtonColor: '#8B5CF6',
+            confirmButtonText: 'Entendido'
+          });
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('Error verificando timer existente:', error);
+      // Si hay error, permitir continuar con el registro
+      console.log('Proceeding with registration');
+    }
+
+    const existing = manualTimes[reposition.id];
+    if (existing) {
+      setManualTimes(prev => ({ ...prev, [reposition.id]: existing }));
+    } else {
+      setManualTimes(prev => ({ ...prev, [reposition.id]: { startTime: '', endTime: '', startDate: new Date(), endDate: new Date() } }));
+    }
+  };
+
+  return (
+    <>
+      {/* Mostrar badge solo si es primera vez y es área creadora */}
+      {showCreatorBadge && reposition.solicitanteArea === userArea && (
+        <div className="mb-2">
+          <Badge variant="outline" className="text-blue-600 border-blue-300">
+            Área creadora
+          </Badge>
+        </div>
+      )}
+
+      {/* Mostrar botón si ha regresado (no es primera vez) o si no es área creadora */}
+      {(!isFirstTime || reposition.solicitanteArea !== userArea) && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="text-green-600 hover:bg-green-50 mb-2"
+          onClick={handleRegisterTime}
+        >
+          <Clock className="w-4 h-4 mr-2" />
+          Registrar Tiempo
+        </Button>
+      )}
+    </>
+  );
+}
+
 export function RepositionList({ userArea }: { userArea: string }) {
+  const { user, isLoading: authLoading } = useAuth();
+  const queryClient = useQueryClient();
+
   const [showForm, setShowForm] = useState(false);
   const [selectedReposition, setSelectedReposition] = useState<number | null>(null);
   const [trackedReposition, setTrackedReposition] = useState<number | null>(null);
@@ -84,10 +202,18 @@ export function RepositionList({ userArea }: { userArea: string }) {
   const [manualTimes, setManualTimes] = useState<Record<number, { startTime: string; endTime: string; startDate: Date | undefined; endDate: Date | undefined }>>({});
   const [completionRequests, setCompletionRequests] = useState<Record<number, number>>({});
   const [editingReposition, setEditingReposition] = useState<number | null>(null);
-  const queryClient = useQueryClient();
 
-  // Add authentication check
-  const { user } = useAuth();
+  // Early return if still loading auth
+  if (authLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <div className="text-gray-600">Verificando autenticación...</div>
+        </div>
+      </div>
+    );
+  }
 
   // Early return if no user is authenticated
   if (!user) {
@@ -115,7 +241,7 @@ export function RepositionList({ userArea }: { userArea: string }) {
     return () => clearInterval(interval);
   }, []);
 
-  const { data: repositions = [], isLoading } = useQuery<Reposition[]>({
+  const { data: repositions = [], isLoading, error } = useQuery<Reposition[]>({
     queryKey: ['repositions', filterArea, showHistory, includeDeleted],
     queryFn: async () => {
       let url = '/api/repositions';
@@ -153,11 +279,13 @@ export function RepositionList({ userArea }: { userArea: string }) {
 
       return data;
     },
-    enabled: !!user, // Only run query when user is authenticated
-    refetchInterval: showForm || editingReposition || selectedReposition || trackedReposition ? false : 3000, // Reducido a 3 segundos para actualizaciones más rápidas
+    enabled: !!user && !authLoading, // Only run query when user is authenticated and not loading
+    refetchInterval: showForm || editingReposition || selectedReposition || trackedReposition ? false : 5000, // Aumentado a 5 segundos para reducir carga
     refetchOnMount: 'always',
-    staleTime: 1000, // 1 segundo para datos más frescos
-    refetchOnWindowFocus: showForm || editingReposition || selectedReposition || trackedReposition ? false : true // Disable when forms are open
+    staleTime: 2000, // 2 segundos para datos más frescos
+    refetchOnWindowFocus: showForm || editingReposition || selectedReposition || trackedReposition ? false : true, // Disable when forms are open
+    retry: 3,
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000)
   });
 
   const { data: notifications = [] } = useQuery({
@@ -234,11 +362,11 @@ export function RepositionList({ userArea }: { userArea: string }) {
       queryClient.invalidateQueries({ queryKey: ['repositions'] });
       queryClient.invalidateQueries({ queryKey: ['transferencias-pendientes-reposicion'] });
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
-      
+
       // Refetch inmediato para mostrar cambios rápidamente
       queryClient.refetchQueries({ queryKey: ['repositions'] });
       queryClient.refetchQueries({ queryKey: ['transferencias-pendientes-reposicion'] });
-      
+
       Swal.fire({
         title: '¡Éxito!',
         text: 'Transferencia creada correctamente',
@@ -401,12 +529,12 @@ export function RepositionList({ userArea }: { userArea: string }) {
       queryClient.invalidateQueries({ queryKey: ['repositions'] });
       queryClient.invalidateQueries({ queryKey: ['transferencias-pendientes-reposicion'] });
       queryClient.invalidateQueries({ queryKey: ['/api/notifications'] });
-      
+
       // Refetch inmediato para sincronización rápida
       queryClient.refetchQueries({ queryKey: ['repositions'] });
       queryClient.refetchQueries({ queryKey: ['transferencias-pendientes-reposicion'] });
       queryClient.refetchQueries({ queryKey: ['/api/notifications'] });
-      
+
       Swal.fire({
         title: '¡Éxito!',
         text: 'Transferencia procesada correctamente',
@@ -507,6 +635,35 @@ export function RepositionList({ userArea }: { userArea: string }) {
       return;
     }
 
+    // Verificar la lógica del área creadora antes de enviar
+    const reposition = repositions.find(r => r.id === repositionId);
+    if (reposition && reposition.solicitanteArea === userArea) {
+      try {
+        const historyResponse = await fetch(`/api/repositions/${repositionId}/history`);
+        if (historyResponse.ok) {
+          const history = await historyResponse.json();
+
+          // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+          const transfersToCreatorArea = history.filter((entry: any) => 
+            entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+          ).length;
+
+          // Si nunca ha regresado por transferencia, no debe registrar tiempo
+          if (transfersToCreatorArea === 0) {
+            Swal.fire({
+              title: 'Información',
+              text: 'El área creadora no debe registrar tiempo en la primera ocasión',
+              icon: 'info',
+              confirmButtonColor: '#8B5CF6'
+            });
+            return;
+          }
+        }
+      } catch (error) {
+        console.error('Error verificando historial:', error);
+      }
+    }
+
     try {
       // Asegurar que las fechas estén en formato YYYY-MM-DD
       const startDate = timeData.startDate instanceof Date 
@@ -570,37 +727,66 @@ export function RepositionList({ userArea }: { userArea: string }) {
   };
 
   const handleTransfer = async (repositionId: number) => {
-    // Obtener los datos de la reposición para verificar el tipo
-    const currentReposition = repositions.find(r => r.id === repositionId);
-    if (!currentReposition) {
+    // Verificar si tiene transferencia pendiente desde mi área
+    if (hasPendingTransferFromMyArea(repositionId)) {
       Swal.fire({
-        title: 'Error',
-        text: 'No se pudo encontrar la información de la reposición',
-        icon: 'error',
+        title: 'Transferencia Pendiente',
+        text: 'Ya tienes una transferencia pendiente desde tu área para esta reposición. Espera a que sea procesada.',
+        icon: 'warning',
         confirmButtonColor: '#8B5CF6'
       });
       return;
     }
 
-    // Verificar si se ha registrado el tiempo para esta área
-    // Solo pedir tiempo si el área actual NO es la que creó la reposición
-    if (currentReposition.solicitanteArea !== userArea) {
-      try {
-        const response = await fetch(`/api/repositions/${repositionId}/timer`);
-        const timer = await response.json();
+    // Verificar tiempo según la nueva lógica
+    const reposition = repositions.find(r => r.id === repositionId);
+    if (reposition) {
+      let shouldRequireTime = false;
 
-        if (!timer || (!timer.manualStartTime && !timer.startTime)) {
-          Swal.fire({
-            title: 'Tiempo no registrado',
-            text: 'Debe registrar el tiempo de trabajo antes de transferir la reposición.',
-            icon: 'warning',
-            confirmButtonColor: '#8B5CF6',
-            confirmButtonText: 'Entendido'
-          });
-          return;
+      // Si no es el área que creó la reposición, siempre requiere tiempo
+      if (reposition.solicitanteArea !== userArea) {
+        shouldRequireTime = true;
+      } else {
+        // Si es el área que creó la reposición, verificar si ha circulado por otras áreas
+        try {
+          const historyResponse = await fetch(`/api/repositions/${repositionId}/history`);
+          if (historyResponse.ok) {
+            const history = await historyResponse.json();
+
+            // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+            const transfersToCreatorArea = history.filter((entry: any) => 
+              entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+            ).length;
+
+            // Si ha regresado por transferencia, debe registrar tiempo
+            if (transfersToCreatorArea > 0) {
+              shouldRequireTime = true;
+            }
+          }
+        } catch (error) {
+          console.error('Error verificando historial:', error);
         }
-      } catch (error) {
-        console.error('Error verificando timer:', error);
+      }
+
+      // Si se requiere tiempo, verificar que esté registrado
+      if (shouldRequireTime) {
+        try {
+          const response = await fetch(`/api/repositions/${repositionId}/timer`);
+          const timer = await response.json();
+
+          if (!timer || (!timer.manualStartTime && !timer.startTime)) {
+            Swal.fire({
+              title: 'Tiempo no registrado',
+              text: 'Debe registrar el tiempo de trabajo antes de transferir la reposición.',
+              icon: 'warning',
+              confirmButtonColor: '#8B5CF6',
+              confirmButtonText: 'Entendido'
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error verificando timer:', error);
+        }
       }
     }
 
@@ -623,7 +809,7 @@ export function RepositionList({ userArea }: { userArea: string }) {
       let consumoTela = null;
 
       // Si el área actual es Corte y es una reposición (no reproceso), pedir el consumo de tela
-      if (userArea === 'corte' && currentReposition.type === 'repocision') {
+      if (userArea === 'corte' && reposition.type === 'repocision') {
         const { value: consumo } = await Swal.fire({
           title: 'Consumo de Tela',
           text: 'Especifica la cantidad de tela utilizada (en metros)',
@@ -927,8 +1113,157 @@ export function RepositionList({ userArea }: { userArea: string }) {
     return 'Solicitar Finalización';
   };
 
+  const handleTransferReposition = async (repositionId: number) => {
+    // Verificar si tiene transferencia pendiente desde mi área
+    if (hasPendingTransferFromMyArea(repositionId)) {
+      Swal.fire({
+        title: 'Transferencia Pendiente',
+        text: 'Ya tienes una transferencia pendiente desde tu área para esta reposición. Espera a que sea procesada.',
+        icon: 'warning',
+        confirmButtonColor: '#8B5CF6'
+      });
+      return;
+    }
+
+    // Verificar tiempo según la nueva lógica
+    const reposition = repositions.find(r => r.id === repositionId);
+    if (reposition) {
+      let shouldRequireTime = false;
+
+      // Si no es el área que creó la reposición, siempre requiere tiempo
+      if (reposition.solicitanteArea !== userArea) {
+        shouldRequireTime = true;
+      } else {
+        // Si es el área que creó la reposición, verificar si ha circulado por otras áreas
+        try {
+          const historyResponse = await fetch(`/api/repositions/${repositionId}/history`);
+          if (historyResponse.ok) {
+            const history = await historyResponse.json();
+
+            // Contar cuántas veces ha sido aceptada una transferencia hacia esta área
+            const transfersToCreatorArea = history.filter((entry: any) => 
+              entry.action === 'transfer_accepted' && entry.toArea === reposition.solicitanteArea
+            ).length;
+
+            // Si ha regresado por transferencia, debe registrar tiempo
+            if (transfersToCreatorArea > 0) {
+              shouldRequireTime = true;
+            }
+          }
+        } catch (error) {
+          console.error('Error verificando historial:', error);
+        }
+      }
+
+      // Si se requiere tiempo, verificar que esté registrado
+      if (shouldRequireTime) {
+        try {
+          const response = await fetch(`/api/repositions/${repositionId}/timer`);
+          const timer = await response.json();
+
+          if (!timer || (!timer.manualStartTime && !timer.startTime)) {
+            Swal.fire({
+              title: 'Tiempo no registrado',
+              text: 'Debe registrar el tiempo de trabajo antes de transferir la reposición.',
+              icon: 'warning',
+              confirmButtonColor: '#8B5CF6',
+              confirmButtonText: 'Entendido'
+            });
+            return;
+          }
+        } catch (error) {
+          console.error('Error verificando timer:', error);
+        }
+      }
+    }
+
+    const { value: toArea } = await Swal.fire({
+      title: 'Transferir a Área',
+      input: 'select',
+      inputOptions: getRepositionNextAreas(userArea).reduce((acc, area) => {
+        acc[area] = getAreaDisplayName(area);
+        return acc;
+      }, {} as Record<string, string>),
+      inputPlaceholder: 'Selecciona un área',
+      showCancelButton: true,
+      confirmButtonColor: '#8B5CF6',
+      inputValidator: (value) => {
+        if (!value) return 'Debes seleccionar un área';
+      }
+    });
+
+    if (toArea) {
+      let consumoTela = null;
+
+      // Si el área actual es Corte y es una reposición (no reproceso), pedir el consumo de tela
+      if (userArea === 'corte' && reposition.type === 'repocision') {
+        const { value: consumo } = await Swal.fire({
+          title: 'Consumo de Tela',
+          text: 'Especifica la cantidad de tela utilizada (en metros)',
+          input: 'number',
+          inputAttributes: {
+            min: '0',
+            step: '0.1',
+            placeholder: '0.0'
+          },
+          showCancelButton: true,
+          confirmButtonColor: '#8B5CF6',
+          inputValidator: (value) => {
+            if (!value || parseFloat(value) < 0) {
+              return 'Debes especificar una cantidad válida de tela';
+            }
+          }
+        });
+
+        if (consumo === undefined) return; // Usuario canceló
+        consumoTela = parseFloat(consumo);
+      }
+
+      const { value: notes } = await Swal.fire({
+        title: 'Notas de transferencia',
+        input: 'textarea',
+        inputPlaceholder: 'Notas adicionales (opcional)',
+        showCancelButton: true,
+        confirmButtonColor: '#8B5CF6'
+      });
+
+      if (notes !== undefined) { // Usuario no canceló
+        transferMutation.mutate({ repositionId, toArea, notes, consumoTela: consumoTela === null ? undefined : consumoTela });
+      }
+    }
+  };
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="text-lg font-semibold text-red-600 mb-2">
+            Error al cargar las reposiciones
+          </div>
+          <div className="text-sm text-gray-500 mb-4">
+            {error instanceof Error ? error.message : 'Error desconocido'}
+          </div>
+          <Button 
+            onClick={() => queryClient.refetchQueries({ queryKey: ['repositions'] })}
+            className="bg-purple-600 hover:bg-purple-700"
+          >
+            Reintentar
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   if (isLoading && !showForm && !editingReposition && !selectedReposition && !trackedReposition) {
-    return <div className="text-center py-8">Cargando solicitudes...</div>;
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600 mx-auto mb-4"></div>
+          <div className="text-gray-600">Cargando solicitudes...</div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1155,7 +1490,7 @@ export function RepositionList({ userArea }: { userArea: string }) {
                     <p className="text-sm text-gray-600">
                       {transfer.notes && `Notas: ${transfer.notes}`}
                     </p>
-                    <p className="text-xs text-gray-500">
+<p className="text-xs text-gray-500">
                       {new Date(transfer.createdAt).toLocaleString()}
                     </p>
                   </div>
@@ -1300,7 +1635,7 @@ export function RepositionList({ userArea }: { userArea: string }) {
                                   ? "text-orange-600 border-orange-300 hover:bg-orange-50 cursor-not-allowed"
                                   : "text-purple-600 hover:bg-purple-50"
                               }`}
-                              onClick={() => handleTransfer(reposition.id)}
+                              onClick={() => handleTransferReposition(reposition.id)}
                               disabled={hasPendingTransferFromMyArea(reposition.id)}
                             >
                               {hasPendingTransferFromMyArea(reposition.id) ? (
@@ -1318,55 +1653,12 @@ export function RepositionList({ userArea }: { userArea: string }) {
 
 
                             <div>
-                              {reposition.solicitanteArea === userArea ? (
-                                <div className="mb-2">
-                                  <Badge variant="outline" className="text-blue-600 border-blue-300">
-                                    Área creadora - No requiere tiempo
-                                  </Badge>
-                                </div>
-                              ) : (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  className="text-green-600 hover:bg-green-50 mb-2"
-                                  onClick={async () => {
-                                    // Verificar si ya existe un tiempo registrado para esta área
-                                    try {
-                                      const response = await fetch(`/api/repositions/${reposition.id}/timer`);
-
-                                      if (response.ok) {
-                                        const timer = await response.json();
-
-                                        // Si ya existe un timer registrado, mostrar mensaje
-                                        if (timer && (timer.manualStartTime || timer.startTime)) {
-                                          Swal.fire({
-                                            title: 'Tiempo ya registrado',
-                                            text: 'Ya existe un tiempo registrado para esta área en esta reposición.',
-                                            icon: 'info',
-                                            confirmButtonColor: '#8B5CF6',
-                                            confirmButtonText: 'Entendido'
-                                          });
-                                          return;
-                                        }
-                                      }
-                                    } catch (error) {
-                                      console.error('Error verificando timer existente:', error);
-                                      // Si hay error, permitir continuar con el registro
-                                      console.log('Proceeding with registration');
-                                    }
-
-                                    const existing = manualTimes[reposition.id];
-                                    if (existing) {
-                                      setManualTimes(prev => ({ ...prev, [reposition.id]: existing }));
-                                    } else {
-                                      setManualTimes(prev => ({ ...prev, [reposition.id]: { startTime: '', endTime: '', startDate: new Date(), endDate: new Date() } }));
-                                    }
-                                  }}
-                                >
-                                  <Clock className="w-4 h-4 mr-2" />
-                                  Registrar Tiempo
-                                </Button>
-                              )}
+                              <CreatorAreaButton 
+                                reposition={reposition}
+                                userArea={userArea}
+                                manualTimes={manualTimes}
+                                setManualTimes={setManualTimes}
+                              />
 
                               {manualTimes[reposition.id] && (
                                 <div className="space-y-3 mt-2 p-3 border rounded-lg bg-gray-50">
